@@ -1,0 +1,21 @@
+{
+  "name": "rahul-ai-mini",
+  "version": "3.0.0",
+  "description": "RAHUL-AI-MINI WhatsApp Automation Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^6.7.8",
+    "axios": "^1.6.8",
+    "express": "^4.19.2",
+    "pino": "^8.19.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "Swedar (Rahul Master)",
+  "license": "Apache-2.0"
+}
