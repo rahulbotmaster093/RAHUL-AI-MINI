@@ -70,8 +70,9 @@ app.get('/pair', (req, res) => {
         .input-group { margin-bottom: 20px; }
         input { width: 100%; padding: 14px; border-radius: 10px; border: 2px solid #334155; background: #020617; color: #fff; font-size: 1rem; outline: none; transition: all 0.3s ease; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
         input:focus { border-color: #00ffcc; box-shadow: 0 0 15px rgba(0, 255, 204, 0.5), inset 0 2px 4px rgba(0,0,0,0.5); }
-        button { width: 100%; padding: 14px; border-radius: 10px; border: none; background: linear-gradient(135deg, #00ffcc, #0055ff); color: #000; font-weight: bold; font-size: 1.1rem; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 0 20px rgba(0, 255, 204, 0.4); }
+        button { width: 100%; padding: 14px; border-radius: 10px; border: none; background: linear-gradient(135deg, #00ffcc, #0055ff); color: #000; font-weight: bold; font-size: 1.1rem; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 0 20px rgba(0, 255, 204, 0.4); margin-top: 5px; }
         button:hover { transform: translateY(-2px); box-shadow: 0 0 30px rgba(0, 255, 204, 0.8), 0 0 10px #ff0055; }
+        .copy-btn { background: linear-gradient(135deg, #ff0055, #ff00ff); color: #fff; display: none; margin-top: 10px; }
         .owner-tag { margin-top: 20px; font-size: 0.85rem; color: #64748b; }
         .owner-tag span { color: #ff0055; text-shadow: 0 0 8px #ff0055; }
         #code-display { margin-top: 20px; font-size: 1.4rem; letter-spacing: 2px; color: #00ffcc; text-shadow: 0 0 10px #00ffcc; word-break: break-all; }
@@ -82,23 +83,27 @@ app.get('/pair', (req, res) => {
         <h2>RAHUL-AI-MINI</h2>
         <p>Enter your WhatsApp Number with Country Code to Pair</p>
         <div class="input-group">
-            <input type="text" id="phone" value="919356730236" placeholder="919356730236">
+            <input type="text" id="phone" placeholder="919356730236">
         </div>
         <button onclick="getPairCode()">Get Pairing Code</button>
         <div id="code-display"></div>
+        <button id="copyBtn" class="copy-btn" onclick="copyCode()">📋 Copy Code</button>
         <div class="owner-tag">Powered by <span>Swedar / Rahul Master</span></div>
     </div>
     <script>
         async function getCode() {
             const phone = document.getElementById('phone').value.trim();
             const display = document.getElementById('code-display');
+            const copyBtn = document.getElementById('copyBtn');
             if(!phone) { alert('Please enter your phone number!'); return; }
             display.innerText = "Generating Code...";
+            copyBtn.style.display = "none";
             try {
                 let res = await fetch(\`/code?number=\${phone}\`);
                 let data = await res.json();
                 if(data.code) {
                     display.innerText = data.code;
+                    copyBtn.style.display = "block";
                 } else {
                     display.innerText = data.error || "Error getting code. Try again.";
                 }
@@ -106,7 +111,13 @@ app.get('/pair', (req, res) => {
                 display.innerText = "Connection Error!";
             }
         }
+        function copyCode() {
+            const display = document.getElementById('code-display').innerText;
+            navigator.clipboard.writeText(display);
+            alert('Pairing code copied to clipboard!');
+        }
         window.getPairCode = getCode;
+        window.copyCode = copyCode;
     </script>
 </body>
 </html>`;
@@ -122,15 +133,16 @@ app.get('/code', async (req, res) => {
     try {
         if (!tempSockStore || tempSockStore.authState.creds.registered) {
             await startRahulAiMini(true);
-            await new Promise(resolve => setTimeout(resolve, 4000));
+            // Wait slightly longer to ensure websocket is fully ready
+            await new Promise(resolve => setTimeout(resolve, 5000));
         }
 
-        if (tempSockStore && !tempSockStore.authState.creds.registered) {
+        if (tempSockStore) {
             let code = await tempSockStore.requestPairingCode(phoneNumber);
             code = code?.match(/.{1,4}/g)?.join("-") || code;
             return res.json({ code });
         } else {
-            return res.json({ error: 'Session already connected or busy. Try again.' });
+            return res.json({ error: 'Socket not ready. Please try again in a few seconds.' });
         }
     } catch (err) {
         console.error("Pairing error:", err);
