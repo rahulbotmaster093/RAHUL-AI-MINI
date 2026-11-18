@@ -46,6 +46,11 @@ let botSettings = {
     customReactsEnabled: false
 };
 
+// ----------------- ROOT REDIRECT TO PAIRING PORTAL -----------------
+app.get('/', (req, res) => {
+    res.redirect('/pair');
+});
+
 // ----------------- EMBEDDED HTML PAIRING PORTAL ROUTE -----------------
 app.get('/pair', (req, res) => {
     const htmlContent = `<!DOCTYPE html>
@@ -136,7 +141,6 @@ app.get('/code', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`[HTTP SERVER] RAHUL-AI-MINI Server running on port ${PORT}`);
     
-    // Check if session exists before auto-starting bot to prevent 500 loops on fresh deploys
     if (fs.existsSync('./session') && fs.readdirSync('./session').length > 0) {
         console.log('[BOT] Existing session found. Starting bot...');
         startRahulAiMini(false);
@@ -549,7 +553,7 @@ async function startRahulAiMini(isPairingOnly = false) {
                 case 'kick':
                 case 'promote':
                 case 'demote': {
-                    if (-isGroup) return sock.sendMessage(from, { text: `This command is only for groups!` }, { quoted: mek });
+                    if (!isGroup) return sock.sendMessage(from, { text: `This command is only for groups!` }, { quoted: mek });
                     await sock.sendMessage(from, { text: `⚡ Group administration command executed.` }, { quoted: mek });
                     break;
                 }
