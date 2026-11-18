@@ -124,14 +124,18 @@ app.get('/pair', (req, res) => {
     res.send(htmlContent);
 });
 
-// ----------------- IMPROVED PAIRING ROUTE -----------------
+// ----------------- BULLETPROOF PAIRING ROUTE -----------------
 app.get('/code', async (req, res) => {
     const phoneNumber = req.query.number?.replace(/[^0-9]/g, '');
     if (!phoneNumber) return res.json({ error: 'Phone number is required' });
     
     try {
-        const sessionDir = './session';
-        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+        const tempDir = './temp_pairing_session';
+        if (fs.existsSync(tempDir)) {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+
+        const { state, saveCreds } = await useMultiFileAuthState(tempDir);
         const { version } = await fetchLatestBaileysVersion();
 
         const sock = makeWASocket({
@@ -142,20 +146,36 @@ app.get('/code', async (req, res) => {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
             },
-            browser: ["Chrome (Linux)", "", ""]
+            browser: ["Ubuntu", "Chrome", "20.0.04"]
         });
 
         sock.ev.on('creds.update', saveCreds);
 
-        // Wait a few seconds for socket to initialize connection state
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Wait for websocket connection to establish before requesting code
+        let codeGenerated = false;
+        
+        for (let i = 0; i < 10; i++) {
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            try {
+                if (!sock.authState.creds.registered) {
+                    let code = await sock.requestPairingCode(phoneNumber);
+                    code = code?.match(/.{1,4}/g)?.join("-") || code;
+                    codeGenerated = true;
+                    
+                    // Cleanup temp folder after successful generation
+                    setTimeout(() => {
+                        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e){}
+                    }, 5000);
 
-        if (!sock.authState.creds.registered) {
-            let code = await sock.requestPairingCode(phoneNumber);
-            code = code?.match(/.{1,4}/g)?.join("-") || code;
-            return res.json({ code });
-        } else {
-            return res.json({ error: 'Session already registered. Clear session folder first.' });
+                    return res.json({ code });
+                }
+            } catch (innerErr) {
+                // Retry if socket is still connecting
+            }
+        }
+
+        if (!codeGenerated) {
+            return res.json({ error: 'Timeout connecting to WhatsApp. Please try again.' });
         }
     } catch (err) {
         console.error("Pairing error:", err);
