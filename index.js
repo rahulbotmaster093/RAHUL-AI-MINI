@@ -62,7 +62,7 @@ app.get('/pair', (req, res) => {
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background-color: #0b0f19; color: #ffffff; min-height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative; }
-        body::before { content: ''; position: absolute; inset: -3px; background: linear-gradient(45deg, #ff0055, #00ffcc, #ff00ff, #0055ff, #ff0055); background-size: 400%; z-index: -1; animation: edgeLighting 12s linear infinite; border-radius: inherit; }
+        body::before { content: ''; position: absolute; inset: -3px; background: linear-gradient(45deg, #ff0055, #00ffcc, #ff00ff, #0055ff, #ff00ff); background-size: 400%; z-index: -1; animation: edgeLighting 12s linear infinite; border-radius: inherit; }
         @keyframes edgeLighting { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
         .container { background: rgba(15, 23, 42, 0.90); padding: 40px 30px; border-radius: 20px; box-shadow: 0 0 30px rgba(0, 255, 204, 0.3), inset 0 0 15px rgba(255, 0, 85, 0.2); text-align: center; width: 100%; max-width: 420px; border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); z-index: 1; }
         h2 { font-size: 1.8rem; margin-bottom: 10px; color: #fff; text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc, 0 0 30px #00ffcc, 0 0 40px #0055ff; }
@@ -124,7 +124,7 @@ app.get('/pair', (req, res) => {
     res.send(htmlContent);
 });
 
-// ----------------- BULLETPROOF PAIRING ROUTE -----------------
+// ----------------- INSTANT INSTANCE PAIRING ROUTE -----------------
 app.get('/code', async (req, res) => {
     const phoneNumber = req.query.number?.replace(/[^0-9]/g, '');
     if (!phoneNumber) return res.json({ error: 'Phone number is required' });
@@ -146,40 +146,39 @@ app.get('/code', async (req, res) => {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
             },
-            browser: ["Ubuntu", "Chrome", "20.0.04"]
+            browser: ["Chrome (Linux)", "", ""]
         });
 
         sock.ev.on('creds.update', saveCreds);
 
-        // Wait for websocket connection to establish before requesting code
-        let codeGenerated = false;
-        
-        for (let i = 0; i < 10; i++) {
-            await new Promise(resolve => setTimeout(resolve, 1500));
+        // Instant pairing code request wrapper with immediate fallback
+        setTimeout(async () => {
             try {
                 if (!sock.authState.creds.registered) {
                     let code = await sock.requestPairingCode(phoneNumber);
                     code = code?.match(/.{1,4}/g)?.join("-") || code;
-                    codeGenerated = true;
                     
-                    // Cleanup temp folder after successful generation
                     setTimeout(() => {
                         try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e){}
-                    }, 5000);
+                    }, 10000);
 
-                    return res.json({ code });
+                    if (!res.headersSent) {
+                        return res.json({ code });
+                    }
                 }
-            } catch (innerErr) {
-                // Retry if socket is still connecting
+            } catch (err) {
+                console.error("Pairing request sub-error:", err);
+                if (!res.headersSent) {
+                    return res.json({ error: 'Failed to generate pairing code. Try again.' });
+                }
             }
-        }
+        }, 3000);
 
-        if (!codeGenerated) {
-            return res.json({ error: 'Timeout connecting to WhatsApp. Please try again.' });
-        }
     } catch (err) {
-        console.error("Pairing error:", err);
-        return res.json({ error: 'Failed to generate pairing code. Try again.' });
+        console.error("Pairing route error:", err);
+        if (!res.headersSent) {
+            return res.json({ error: 'Failed to generate pairing code. Try again.' });
+        }
     }
 });
 
