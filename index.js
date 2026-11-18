@@ -117,7 +117,7 @@ app.get('/code', async (req, res) => {
     try {
         if (!tempSockStore || tempSockStore.authState.creds.registered) {
             await startRahulAiMini(true);
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            await new Promise(resolve => setTimeout(resolve, 4000));
         }
 
         if (tempSockStore && !tempSockStore.authState.creds.registered) {
@@ -125,7 +125,7 @@ app.get('/code', async (req, res) => {
             code = code?.match(/.{1,4}/g)?.join("-") || code;
             return res.json({ code });
         } else {
-            return res.json({ error: 'Session already connected. Clear session folder to re-pair.' });
+            return res.json({ error: 'Session already connected or busy. Try again.' });
         }
     } catch (err) {
         console.error("Pairing error:", err);
@@ -135,6 +135,14 @@ app.get('/code', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`[HTTP SERVER] RAHUL-AI-MINI Server running on port ${PORT}`);
+    
+    // Check if session exists before auto-starting bot to prevent 500 loops on fresh deploys
+    if (fs.existsSync('./session') && fs.readdirSync('./session').length > 0) {
+        console.log('[BOT] Existing session found. Starting bot...');
+        startRahulAiMini(false);
+    } else {
+        console.log('[BOT] No session found. Open /pair link in your browser to generate pairing code.');
+    }
 });
 
 function getRuntime(uptime) {
@@ -176,10 +184,8 @@ async function startRahulAiMini(isPairingOnly = false) {
                 } catch(e) {}
             }
 
-            if (reason !== DisconnectReason.loggedOut) {
-                setTimeout(() => startRahulAiMini(), 3000);
-            } else {
-                console.log('Bot logged out. Delete session folder and restart.');
+            if (!isPairingOnly && reason !== DisconnectReason.loggedOut) {
+                setTimeout(() => startRahulAiMini(false), 3000);
             }
         } else if (connection === 'open') {
             console.log('====================================================');
@@ -543,7 +549,7 @@ async function startRahulAiMini(isPairingOnly = false) {
                 case 'kick':
                 case 'promote':
                 case 'demote': {
-                    if (!isGroup) return sock.sendMessage(from, { text: `This command is only for groups!` }, { quoted: mek });
+                    if (-isGroup) return sock.sendMessage(from, { text: `This command is only for groups!` }, { quoted: mek });
                     await sock.sendMessage(from, { text: `⚡ Group administration command executed.` }, { quoted: mek });
                     break;
                 }
@@ -564,5 +570,3 @@ async function startRahulAiMini(isPairingOnly = false) {
         }
     });
 }
-
-startRahulAiMini();
