@@ -124,25 +124,38 @@ app.get('/pair', (req, res) => {
     res.send(htmlContent);
 });
 
-let tempSockStore = null;
-
+// ----------------- IMPROVED PAIRING ROUTE -----------------
 app.get('/code', async (req, res) => {
-    const phoneNumber = req.query.number;
+    const phoneNumber = req.query.number?.replace(/[^0-9]/g, '');
     if (!phoneNumber) return res.json({ error: 'Phone number is required' });
     
     try {
-        if (!tempSockStore || tempSockStore.authState.creds.registered) {
-            await startRahulAiMini(true);
-            // Wait slightly longer to ensure websocket is fully ready
-            await new Promise(resolve => setTimeout(resolve, 5000));
-        }
+        const sessionDir = './session';
+        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+        const { version } = await fetchLatestBaileysVersion();
 
-        if (tempSockStore) {
-            let code = await tempSockStore.requestPairingCode(phoneNumber);
+        const sock = makeWASocket({
+            version,
+            logger: pino({ level: 'silent' }),
+            printQRInTerminal: false,
+            auth: {
+                creds: state.creds,
+                keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+            },
+            browser: ["Chrome (Linux)", "", ""]
+        });
+
+        sock.ev.on('creds.update', saveCreds);
+
+        // Wait a few seconds for socket to initialize connection state
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        if (!sock.authState.creds.registered) {
+            let code = await sock.requestPairingCode(phoneNumber);
             code = code?.match(/.{1,4}/g)?.join("-") || code;
             return res.json({ code });
         } else {
-            return res.json({ error: 'Socket not ready. Please try again in a few seconds.' });
+            return res.json({ error: 'Session already registered. Clear session folder first.' });
         }
     } catch (err) {
         console.error("Pairing error:", err);
@@ -155,7 +168,7 @@ app.listen(PORT, () => {
     
     if (fs.existsSync('./session') && fs.readdirSync('./session').length > 0) {
         console.log('[BOT] Existing session found. Starting bot...');
-        startRahulAiMini(false);
+        startRahulAiMini();
     } else {
         console.log('[BOT] No session found. Open /pair link in your browser to generate pairing code.');
     }
@@ -169,7 +182,7 @@ function getRuntime(uptime) {
 }
 
 // ----------------- MAIN WHATSAPP BOT STARTUP -----------------
-async function startRahulAiMini(isPairingOnly = false) {
+async function startRahulAiMini() {
     const sessionDir = './session';
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const { version } = await fetchLatestBaileysVersion();
@@ -177,15 +190,13 @@ async function startRahulAiMini(isPairingOnly = false) {
     const sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: !isPairingOnly,
+        printQRInTerminal: true,
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
         },
         browser: ["RAHUL-AI-MINI", "Safari", "3.0.0"]
     });
-
-    tempSockStore = sock;
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
@@ -200,8 +211,8 @@ async function startRahulAiMini(isPairingOnly = false) {
                 } catch(e) {}
             }
 
-            if (!isPairingOnly && reason !== DisconnectReason.loggedOut) {
-                setTimeout(() => startRahulAiMini(false), 3000);
+            if (reason !== DisconnectReason.loggedOut) {
+                setTimeout(() => startRahulAiMini(), 3000);
             }
         } else if (connection === 'open') {
             console.log('====================================================');
@@ -219,8 +230,6 @@ async function startRahulAiMini(isPairingOnly = false) {
     });
 
     sock.ev.on('creds.update', saveCreds);
-
-    if (isPairingOnly) return sock;
 
     // ----------------- MESSAGE PROCESSOR & COMMANDS HANDLER -----------------
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
